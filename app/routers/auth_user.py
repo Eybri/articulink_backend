@@ -153,7 +153,7 @@ async def login(login_data: LoginRequest):
 
     if not user or not verify_password(login_data.password, user["password"]):
         raise invalid
-    if user.get("role") != "user":
+    if user.get("role") not in ["user", "admin"]:
         raise invalid
     if user.get("status") == "pending":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your email before logging in.")
@@ -172,14 +172,14 @@ async def login(login_data: LoginRequest):
         else:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Account deactivated: {reason}")
 
-    access_token = create_access_token(str(user["_id"]), role="user")
+    access_token = create_access_token(str(user["_id"]), role=user.get("role", "user"))
     return Token(
         access_token=access_token,
         refresh_token="",
         token_type="bearer",
         user={
             "_id": str(user["_id"]), "email": user["email"],
-            "username": user.get("username"), "role": "user",
+            "username": user.get("username"), "role": user.get("role", "user"),
             "profile_pic": user.get("profile_pic"), "birthdate": user.get("birthdate"),
             "gender": user.get("gender"), "status": user.get("status", "active")
         }
