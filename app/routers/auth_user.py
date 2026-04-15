@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import logging, secrets
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/auth", tags=["User Auth"])
+router = APIRouter(prefix="/auth", tags=["User Auth"])
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
