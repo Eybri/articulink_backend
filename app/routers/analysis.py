@@ -13,6 +13,7 @@ async def get_speech_analysis(user_id: str = Depends(get_current_user_id)):
     try:
         # Fetch last 20 records to provide context for AI
         records = await get_clips_by_user(user_id, limit=20)
+        print(f"DEBUG: Fetched {len(records)} records for user {user_id}")
         
         if not records or len(records) < 3:
             return {
