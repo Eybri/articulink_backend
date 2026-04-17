@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import logging, secrets
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/auth", tags=["User Auth"])
+router = APIRouter(prefix="/auth", tags=["User Auth"])
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -153,7 +153,7 @@ async def login(login_data: LoginRequest):
 
     if not user or not verify_password(login_data.password, user["password"]):
         raise invalid
-    if user.get("role") != "user":
+    if user.get("role") not in ["user", "admin"]:
         raise invalid
     if user.get("status") == "pending":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your email before logging in.")
@@ -172,16 +172,17 @@ async def login(login_data: LoginRequest):
         else:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Account deactivated: {reason}")
 
-    access_token = create_access_token(str(user["_id"]), role="user")
+    access_token = create_access_token(str(user["_id"]), role=user.get("role", "user"))
     return Token(
         access_token=access_token,
         refresh_token="",
         token_type="bearer",
         user={
             "_id": str(user["_id"]), "email": user["email"],
-            "username": user.get("username"), "role": "user",
+            "username": user.get("username"), "role": user.get("role", "user"),
             "profile_pic": user.get("profile_pic"), "birthdate": user.get("birthdate"),
-            "gender": user.get("gender"), "status": user.get("status", "active")
+            "gender": user.get("gender"), "status": user.get("status", "active"),
+            "privacy_accepted": user.get("privacy_accepted", False)
         }
     )
 
@@ -200,7 +201,9 @@ async def get_me(user_id: str = Depends(get_current_user_id)):
     return UserOut(id=str(user["_id"]), email=user["email"], username=user.get("username"),
                    role=user.get("role"), profile_pic=user.get("profile_pic"),
                    birthdate=user.get("birthdate"), gender=user.get("gender"),
-                   status=user.get("status", "active"), created_at=user.get("created_at"),
+                   status=user.get("status", "active"),
+                   privacy_accepted=user.get("privacy_accepted", False),
+                   created_at=user.get("created_at"),
                    updated_at=user.get("updated_at"))
 
 
@@ -218,7 +221,8 @@ async def update_profile(profile_data: UserUpdate, user_id: str = Depends(get_cu
     return UserUpdateResponse(id=str(updated_user["_id"]), email=updated_user["email"],
                               username=updated_user.get("username"), role=updated_user.get("role"),
                               profile_pic=updated_user.get("profile_pic"), birthdate=updated_user.get("birthdate"),
-                              gender=updated_user.get("gender"), message="Profile updated successfully")
+                              gender=updated_user.get("gender"), privacy_accepted=updated_user.get("privacy_accepted", False),
+                              message="Profile updated successfully")
 
 
 @router.post("/profile/picture", response_model=UserUpdateResponse, dependencies=[Depends(require_auth)])
@@ -232,7 +236,8 @@ async def upload_profile_pic(file: UploadFile = File(...), user_id: str = Depend
     return UserUpdateResponse(id=str(updated_user["_id"]), email=updated_user["email"],
                               username=updated_user.get("username"), role=updated_user.get("role"),
                               profile_pic=updated_user.get("profile_pic"), birthdate=updated_user.get("birthdate"),
-                              gender=updated_user.get("gender"), message="Profile picture updated successfully")
+                              gender=updated_user.get("gender"), privacy_accepted=updated_user.get("privacy_accepted", False),
+                              message="Profile picture updated successfully")
 
 
 @router.delete("/profile/picture", dependencies=[Depends(require_auth)])

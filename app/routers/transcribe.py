@@ -11,7 +11,7 @@ from app.utils.auth_middleware import require_auth, get_current_user_id
 from app.utils.supabase_storage import upload_audio
 from app.models.transcription import create_audio_clip, get_clips_by_user, delete_audio_clip
 
-router = APIRouter(prefix="/api/v1", tags=["Transcription"])
+router = APIRouter(prefix="", tags=["Transcription"])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 compute_type = "float16" if device == "cuda" else "int8"

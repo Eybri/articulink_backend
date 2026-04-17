@@ -39,7 +39,9 @@ class UserListOut(BaseModel):
 def fmt_dt(dt):
     if dt is None:
         return None
-    return dt.isoformat() if isinstance(dt, datetime) else dt
+    if hasattr(dt, 'isoformat'):
+        return dt.isoformat()
+    return str(dt)
 
 
 def user_to_dict(user: dict) -> dict:
@@ -49,7 +51,7 @@ def user_to_dict(user: dict) -> dict:
         "username": user.get("username"),
         "role": user.get("role", "user"),
         "profile_pic": user.get("profile_pic"),
-        "birthdate": user.get("birthdate"),
+        "birthdate": fmt_dt(user.get("birthdate")),
         "gender": user.get("gender"),
         "status": user.get("status", "active"),
         "deactivation_reason": user.get("deactivation_reason"),
@@ -239,7 +241,7 @@ async def get_gender_demographics():
         {"$project": {"gender": {"$ifNull": ["$_id", "Not Specified"]}, "count": 1, "_id": 0}},
         {"$sort": {"count": -1}}
     ]
-    gender_data = await db.users.aggregate(pipeline).to_list(length=None)
+    gender_data = await db.users.aggregate(pipeline).to_list(length=100)
     total_users = await db.users.count_documents({})
     for item in gender_data:
         item["percentage"] = round((item["count"] / total_users) * 100, 2) if total_users > 0 else 0
@@ -255,7 +257,7 @@ async def get_user_growth(timeframe: str = Query("monthly")):
         {"$project": {"period": "$_id", "count": 1, "date": 1, "_id": 0}},
         {"$sort": {"date": 1}}
     ]
-    growth_data = await db.users.aggregate(pipeline).to_list(length=None)
+    growth_data = await db.users.aggregate(pipeline).to_list(length=1000)
     cumulative = 0
     for item in growth_data:
         cumulative += item["count"]
@@ -266,7 +268,7 @@ async def get_user_growth(timeframe: str = Query("monthly")):
 @router.get("/dashboard/age-distribution", dependencies=[Depends(require_admin_auth)])
 async def get_age_distribution():
     await auto_reactivate_users()
-    users_with_birthdate = await db.users.find({"birthdate": {"$exists": True, "$ne": None}}).to_list(length=None)
+    users_with_birthdate = await db.users.find({"birthdate": {"$exists": True, "$ne": None}}).to_list(length=10000)
     age_ranges = {"Under 18": 0, "18-25": 0, "26-35": 0, "36-45": 0, "46-55": 0, "56-65": 0, "Over 65": 0}
     current_date = datetime.now()
 
