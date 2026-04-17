@@ -81,6 +81,8 @@ async def generate_speech_analysis(records: List[Dict]) -> str:
             corrected = rec.get("corrected_transcript", "")
             accuracy = rec.get("confidence_score") or 0.95
             history_text += f"{i+1}. Raw: '{transcript}' -> Clarified: '{corrected}' (Accuracy: {accuracy*100:.1f}%)\n"
+        
+        print(f"DEBUG: Analysis History Text:\n{history_text}")
 
         analysis_prompt = f"""
         You are a Professional Speech Language Pathologist and Articulink Performance Analyst.
@@ -108,10 +110,14 @@ async def generate_speech_analysis(records: List[Dict]) -> str:
             generation_config={"temperature": 0.3, "max_output_tokens": 500}
         )
         
-        if not response or not response.text:
-            return "Unable to generate analysis at this time. Keep recording more to get a better report!"
+        if not response or not hasattr(response, 'text') or not response.text:
+            msg = "Unable to generate analysis at this time. Keep recording more to get a better report!"
+            print(f"DEBUG: AI failed to generate text. Showing fallback: {msg}")
+            return msg
             
-        return response.text.strip()
+        report_text = response.text.strip()
+        print(f"DEBUG: Generated Analysis Report:\n{report_text}")
+        return report_text
     except Exception as e:
         print(f"Speech Analysis Error: {e}")
         return "Insight generation encountered an error. Please try again after a few more recordings."
