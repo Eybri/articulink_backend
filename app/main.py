@@ -18,6 +18,7 @@ from app.routers.users import router as users_router
 from app.routers.transcribe import router as transcribe_router
 from app.routers.chat import router as chat_router
 from app.routers.pronunciation import router as pronunciation_router
+from app.routers.analysis import router as analysis_router
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -60,6 +61,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(auth_user_router)    # /api/auth/*
 app.include_router(transcribe_router)   # /api/v1/transcribe, /api/v1/history
 app.include_router(chat_router)         # /api/v1/chatbot/*
+app.include_router(analysis_router)     # /analysis/*
 
 # Admin web routes
 app.include_router(auth_admin_router)   # /api/admin/auth/*
