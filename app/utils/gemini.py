@@ -4,7 +4,7 @@ from typing import List, Dict, Optional
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-model = genai.GenerativeModel(model_name="models/gemini-2.5-flash")
+model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
 SYSTEM_PROMPT = """
 You are the professional Articulink Chat Support assistant.
@@ -105,9 +105,17 @@ async def generate_speech_analysis(records: List[Dict]) -> str:
         - DO NOT provide medical diagnosis.
         """
 
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+        ]
+        
         response = model.generate_content(
             analysis_prompt,
-            generation_config={"temperature": 0.3, "max_output_tokens": 500}
+            generation_config={"temperature": 0.4, "max_output_tokens": 1000},
+            safety_settings=safety_settings
         )
         
         if not response or not hasattr(response, 'text') or not response.text:
