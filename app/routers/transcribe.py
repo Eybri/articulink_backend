@@ -13,10 +13,23 @@ from app.models.transcription import create_audio_clip, get_clips_by_user, delet
 
 router = APIRouter(prefix="", tags=["Transcription"])
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-compute_type = "float16" if device == "cuda" else "int8"
-print(f"--- Initializing Whisper Model (Small) on {device} ({compute_type}) ---")
-model = WhisperModel("small", device=device, compute_type=compute_type)
+# --- Whisper Model Configuration ---
+WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL_NAME", "small")
+WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
+WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "float16" if WHISPER_DEVICE == "cuda" else "int8")
+WHISPER_CPU_THREADS = int(os.getenv("WHISPER_CPU_THREADS", "4"))
+WHISPER_DOWNLOAD_ROOT = os.getenv("WHISPER_DOWNLOAD_ROOT", "./models")
+
+print(f"--- Initializing Whisper Model ({WHISPER_MODEL_NAME}) on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE}) ---")
+# Pre-initialize model once at module level
+model = WhisperModel(
+    WHISPER_MODEL_NAME, 
+    device=WHISPER_DEVICE, 
+    compute_type=WHISPER_COMPUTE_TYPE,
+    download_root=WHISPER_DOWNLOAD_ROOT,
+    cpu_threads=WHISPER_CPU_THREADS,
+    num_workers=2 # Increase for higher throughput on server
+)
 
 
 @router.post("/transcribe", dependencies=[Depends(require_auth)])
