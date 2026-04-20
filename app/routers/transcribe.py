@@ -6,7 +6,6 @@ import os
 import traceback
 import asyncio
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
-from faster_whisper import WhisperModel
 import httpx
 from app.utils.auth_middleware import require_auth, get_current_user_id
 from app.utils.supabase_storage import upload_audio
@@ -21,17 +20,29 @@ WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "float16" if WHISPER_DE
 WHISPER_CPU_THREADS = int(os.getenv("WHISPER_CPU_THREADS", "4"))
 WHISPER_DOWNLOAD_ROOT = os.getenv("WHISPER_DOWNLOAD_ROOT", "./models")
 HF_SPACE_URL = os.getenv("HF_SPACE_URL")
+SKIP_LOCAL_WHISPER = os.getenv("SKIP_LOCAL_WHISPER", "false").lower() == "true"
 
-print(f"--- Initializing Whisper Model ({WHISPER_MODEL_NAME}) on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE}) ---")
-# Pre-initialize model once at module level
-model = WhisperModel(
-    WHISPER_MODEL_NAME, 
-    device=WHISPER_DEVICE, 
-    compute_type=WHISPER_COMPUTE_TYPE,
-    download_root=WHISPER_DOWNLOAD_ROOT,
-    cpu_threads=WHISPER_CPU_THREADS,
-    num_workers=2 # Increase for higher throughput on server
-)
+# Global variable for lazy loading the model
+_local_whisper_model = None
+
+def get_local_whisper_model():
+    """
+    Lazy loads the Whisper model only when needed.
+    This saves significant RAM on Render's free tier.
+    """
+    global _local_whisper_model
+    if _local_whisper_model is None:
+        from faster_whisper import WhisperModel
+        print(f"--- Initializing local Whisper Model ({WHISPER_MODEL_NAME}) ---")
+        _local_whisper_model = WhisperModel(
+            WHISPER_MODEL_NAME, 
+            device=WHISPER_DEVICE, 
+            compute_type=WHISPER_COMPUTE_TYPE,
+            download_root=WHISPER_DOWNLOAD_ROOT,
+            cpu_threads=WHISPER_CPU_THREADS,
+            num_workers=1 # Reduced for lower memory footprint
+        )
+    return _local_whisper_model
 
 
 @router.post("/transcribe", dependencies=[Depends(require_auth)])
@@ -138,9 +149,14 @@ async def decode_whisper(audio_binary, audio_numpy):
             print(f"--- Remote transcription error: {str(e)} ---")
 
     # Fallback to local Whisper model
+    if SKIP_LOCAL_WHISPER:
+        print("--- Local fallback skipped due to SKIP_LOCAL_WHISPER=true ---")
+        return "Transcription error: Remote service unavailable."
+
     print("--- Using local Whisper fallback ---")
+    local_model = get_local_whisper_model()
     segments, _ = await asyncio.to_thread(
-        model.transcribe, audio_numpy, beam_size=1, language="tl", task="transcribe"
+        local_model.transcribe, audio_numpy, beam_size=1, language="tl", task="transcribe"
     )
     return " ".join([s.text for s in segments]).strip()
 
