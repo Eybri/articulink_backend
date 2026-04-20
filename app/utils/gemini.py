@@ -4,7 +4,7 @@ from typing import List, Dict, Optional
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+model = genai.GenerativeModel(model_name="models/gemini-2.5-flash")
 
 SYSTEM_PROMPT = """
 You are the professional Articulink Chat Support assistant.
