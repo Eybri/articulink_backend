@@ -30,6 +30,8 @@ class UserOut(BaseModel):
     id: str
     email: str
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     role: str
     status: str
     profile_pic: Optional[str] = None
@@ -44,6 +46,8 @@ class UserOut(BaseModel):
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     birthdate: Optional[str] = None
     gender: Optional[str] = None
     privacy_accepted: Optional[bool] = None
@@ -52,6 +56,8 @@ class UserUpdateResponse(BaseModel):
     id: str
     email: str
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     role: str
     profile_pic: Optional[str] = None
     birthdate: Optional[str] = None

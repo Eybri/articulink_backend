@@ -1,7 +1,9 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from dotenv import load_dotenv
 import os
 import logging
 import cloudinary
@@ -21,7 +23,6 @@ from app.routers.pronunciation import router as pronunciation_router
 from app.routers.analysis import router as analysis_router
 from app.routers.speech_stats import router as speech_stats_router
 
-load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

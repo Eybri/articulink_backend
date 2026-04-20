@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pronunciation", tags=["Pronunciation"])
 
 
+class UserInfo(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    profile_pic: Optional[str] = None
+
 class AudioClipResponse(BaseModel):
     id: str
     user_id: str
@@ -23,13 +28,14 @@ class AudioClipResponse(BaseModel):
     device_type: Optional[str] = None
     language: Optional[str] = None
     created_at: Optional[str] = None
+    user_info: Optional[UserInfo] = None
 
     class Config:
         from_attributes = True
 
 
 def _fmt(clip: dict) -> dict:
-    return {
+    res = {
         "id": str(clip["_id"]),
         "user_id": str(clip.get("user_id", "")),
         "audio_url": clip.get("audio_url", ""),
@@ -42,6 +48,25 @@ def _fmt(clip: dict) -> dict:
         "language": clip.get("language"),
         "created_at": clip.get("created_at").isoformat() if clip.get("created_at") else None
     }
+    
+    # Handle user_info from aggregation
+    if "user_info" in clip and clip["user_info"]:
+        user = clip["user_info"]
+        res["user_info"] = {
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "profile_pic": user.get("profile_pic")
+        }
+    elif "user_details" in clip and clip["user_details"]:
+        # Handle cases where $lookup returns a list
+        user = clip["user_details"][0] if clip["user_details"] else {}
+        res["user_info"] = {
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "profile_pic": user.get("profile_pic")
+        }
+        
+    return res
 
 
 @router.get("/audio-clips", response_model=List[AudioClipResponse], dependencies=[Depends(require_admin_auth)])
@@ -51,12 +76,44 @@ async def get_audio_clips(
     status: Optional[str] = None,
     language: Optional[str] = None
 ):
-    query = {}
+    match_stage = {}
     if status:
-        query["processing_status"] = status
+        match_stage["processing_status"] = status
     if language:
-        query["language"] = language
-    cursor = db.audio_clips.find(query).sort("created_at", -1).skip(skip).limit(limit)
+        match_stage["language"] = language
+
+    pipeline = [
+        {"$match": match_stage},
+        {"$sort": {"created_at": -1}},
+        {"$skip": skip},
+        {"$limit": limit},
+        {
+            "$addFields": {
+                "user_obj_id": {
+                    "$cond": {
+                        "if": {"$eq": [{"$type": "$user_id"}, "string"]},
+                        "then": {"$toObjectId": "$user_id"},
+                        "else": "$user_id"
+                    }
+                }
+            }
+        },
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "user_obj_id",
+                "foreignField": "_id",
+                "as": "user_details"
+            }
+        },
+        {
+            "$project": {
+                "user_obj_id": 0
+            }
+        }
+    ]
+    
+    cursor = db.audio_clips.aggregate(pipeline)
     clips = await cursor.to_list(length=limit)
     return [_fmt(c) for c in clips]
 
