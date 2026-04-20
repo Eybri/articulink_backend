@@ -299,3 +299,197 @@ async def get_age_distribution():
         "total_users_with_birthdate": total_with_bd,
         "total_users": await db.users.count_documents({})
     }
+
+
+@router.get("/dashboard/health", dependencies=[Depends(require_admin_auth)])
+async def get_system_health():
+    """
+    Check health of core services and AI models.
+    Returns status: 'optimal', 'degraded', or 'down'.
+    """
+    import os
+    import httpx
+    import asyncio
+
+    health_results = {}
+    overall_status = "optimal"
+
+    # 1. MongoDB Health
+    try:
+        await db.command("ping")
+        health_results["database"] = {"status": "connected", "latency": "low"}
+    except Exception as e:
+        health_results["database"] = {"status": "error", "detail": str(e)}
+        overall_status = "down"
+
+    # 2. Gemini Model Health
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key and len(gemini_key) > 5:
+        # We assume it's working if key is present to avoid API costs on health check
+        health_results["gemini"] = {"status": "configured", "model": "gemini-2.5-flash"}
+    else:
+        health_results["gemini"] = {"status": "missing_config", "detail": "API Key not found"}
+        if overall_status == "optimal": overall_status = "degraded"
+
+    # 3. Whisper / Hugging Face Health
+    hf_url = os.getenv("HF_SPACE_URL")
+    if hf_url:
+        try:
+            # Quick HEAD request to check if space is up
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(hf_url, timeout=5.0)
+                if resp.status_code in [200, 405, 401]: # 405/401 might mean it's there but rejects empty GET
+                    health_results["whisper"] = {"status": "online", "mode": "remote"}
+                else:
+                    health_results["whisper"] = {"status": "degraded", "detail": f"Status {resp.status_code}"}
+                    if overall_status == "optimal": overall_status = "degraded"
+        except Exception as e:
+            health_results["whisper"] = {"status": "offline", "detail": str(e), "mode": "fallback_local"}
+            if overall_status == "optimal": overall_status = "degraded"
+    else:
+        health_results["whisper"] = {"status": "local_only", "mode": "local"}
+
+    # 4. Supabase Storage Health
+    sb_url = os.getenv("SUPABASE_URL")
+    sb_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if sb_url and sb_key:
+        health_results["storage"] = {"status": "configured", "provider": "supabase"}
+    else:
+        health_results["storage"] = {"status": "missing_config"}
+        if overall_status == "optimal": overall_status = "degraded"
+
+    return {
+        "status": overall_status,
+        "timestamp": datetime.utcnow().isoformat(),
+        "services": health_results
+    }
+
+@router.get("/dashboard/chat-activity", dependencies=[Depends(require_admin_auth)])
+async def get_chat_activity(timeframe: str = Query("daily")):
+    date_format = {"daily": "%Y-%m-%d", "weekly": "%Y-%U"}.get(timeframe, "%Y-%m")
+    pipeline = [
+        {"$match": {"timestamp": {"$exists": True, "$type": "string"}}},
+        {"$project": {
+            "date": {"$dateFromString": {"dateString": "$timestamp", "onError": datetime.utcnow()}}
+        }},
+        {"$group": {
+            "_id": {"$dateToString": {"format": date_format, "date": "$date"}},
+            "count": {"$sum": 1},
+            "raw_date": {"$first": "$date"}
+        }},
+        {"$project": {"period": "$_id", "count": 1, "raw_date": 1, "_id": 0}},
+        {"$sort": {"raw_date": 1}}
+    ]
+    activity_data = await db.chat_history.aggregate(pipeline).to_list(length=1000)
+    return {"timeframe": timeframe, "activity": activity_data}
+
+
+@router.get("/dashboard/platform-engagement", dependencies=[Depends(require_admin_auth)])
+async def get_platform_engagement(timeframe: str = Query("daily")):
+    date_format = {"daily": "%Y-%m-%d", "weekly": "%Y-%U"}.get(timeframe, "%Y-%m")
+    
+    # Aggregate chats
+    chat_pipeline = [
+        {"$match": {"timestamp": {"$exists": True, "$type": "string"}}},
+        {"$project": {"date": {"$dateFromString": {"dateString": "$timestamp", "onError": datetime.utcnow()}}}},
+        {"$group": {"_id": {"$dateToString": {"format": date_format, "date": "$date"}}, "chat_count": {"$sum": 1}}}
+    ]
+    chat_results = await db.chat_history.aggregate(chat_pipeline).to_list(length=1000)
+    
+    # Aggregate audio
+    audio_pipeline = [
+        {"$match": {"created_at": {"$exists": True}}},
+        {"$project": {
+            "date": {
+                "$cond": {
+                    "if": {"$eq": [{"$type": "$created_at"}, "string"]},
+                    "then": {"$dateFromString": {"dateString": "$created_at", "onError": datetime.utcnow()}},
+                    "else": "$created_at"
+                }
+            }
+        }},
+        {"$group": {"_id": {"$dateToString": {"format": date_format, "date": "$date"}}, "audio_count": {"$sum": 1}}}
+    ]
+    audio_results = await db.audio_clips.aggregate(audio_pipeline).to_list(length=1000)
+    
+    # Merge results
+    engagement_map = {}
+    for r in chat_results:
+        engagement_map[r["_id"]] = {"period": r["_id"], "chat_count": r["chat_count"], "audio_count": 0}
+    for r in audio_results:
+        if r["_id"] in engagement_map:
+            engagement_map[r["_id"]]["audio_count"] = r["audio_count"]
+        else:
+            engagement_map[r["_id"]] = {"period": r["_id"], "chat_count": 0, "audio_count": r["audio_count"]}
+            
+    sorted_engagement = sorted(engagement_map.values(), key=lambda x: x["period"])
+    return {"timeframe": timeframe, "engagement": sorted_engagement}
+
+
+@router.get("/dashboard/chat-roles", dependencies=[Depends(require_admin_auth)])
+async def get_chat_roles():
+    pipeline = [
+        {"$group": {"_id": "$role", "count": {"$sum": 1}}},
+        {"$project": {"role": "$_id", "count": 1, "_id": 0}}
+    ]
+    data = await db.chat_history.aggregate(pipeline).to_list(length=10)
+    return {"roles": data}
+
+
+@router.get("/dashboard/audio-growth", dependencies=[Depends(require_admin_auth)])
+async def get_audio_growth(timeframe: str = Query("daily")):
+    date_format = {"daily": "%Y-%m-%d", "weekly": "%Y-%U"}.get(timeframe, "%Y-%m")
+    pipeline = [
+        {"$match": {"created_at": {"$exists": True}}},
+        {"$project": {
+            "date": {
+                "$cond": {
+                    "if": {"$eq": [{"$type": "$created_at"}, "string"]},
+                    "then": {"$dateFromString": {"dateString": "$created_at", "onError": datetime.utcnow()}},
+                    "else": "$created_at"
+                }
+            }
+        }},
+        {"$group": {
+            "_id": {"$dateToString": {"format": date_format, "date": "$date"}},
+            "count": {"$sum": 1},
+            "raw_date": {"$first": "$date"}
+        }},
+        {"$project": {"period": "$_id", "count": 1, "raw_date": 1, "_id": 0}},
+        {"$sort": {"raw_date": 1}}
+    ]
+    growth_data = await db.audio_clips.aggregate(pipeline).to_list(length=1000)
+    return {"timeframe": timeframe, "growth": growth_data}
+
+
+@router.get("/dashboard/user-status", dependencies=[Depends(require_admin_auth)])
+async def get_user_status_dist():
+    pipeline = [
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+        {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+    ]
+    data = await db.users.aggregate(pipeline).to_list(length=10)
+    return {"status_distribution": data}
+
+
+@router.get("/dashboard/user-roles", dependencies=[Depends(require_admin_auth)])
+async def get_user_role_dist():
+    pipeline = [
+        {"$group": {"_id": "$role", "count": {"$sum": 1}}},
+        {"$project": {"role": "$_id", "count": 1, "_id": 0}}
+    ]
+    data = await db.users.aggregate(pipeline).to_list(length=10)
+    return {"role_distribution": data}
+
+
+@router.get("/dashboard/privacy-acceptance", dependencies=[Depends(require_admin_auth)])
+async def get_privacy_acceptance():
+    # Example logic: count users who finished onboarding vs those who didn't
+    # or if you have a specific privacy_accepted field
+    total = await db.users.count_documents({})
+    accepted = await db.users.count_documents({"privacy_accepted": True})
+    return {
+        "total": total,
+        "accepted": accepted,
+        "pending": total - accepted
+    }

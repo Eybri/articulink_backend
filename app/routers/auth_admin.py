@@ -31,6 +31,7 @@ async def admin_login(payload: LoginRequest):
         user={
             "id": str(user["_id"]), "email": user["email"],
             "username": user.get("username"), "role": "admin",
+            "first_name": user.get("first_name"), "last_name": user.get("last_name"),
             "profile_pic": user.get("profile_pic"), "birthdate": user.get("birthdate"),
             "gender": user.get("gender")
         }
@@ -48,6 +49,7 @@ async def get_admin_profile(user_id: str = Depends(get_current_user_id)):
     return {
         "id": str(user["_id"]), "email": user["email"],
         "username": user.get("username"), "role": user.get("role"),
+        "first_name": user.get("first_name"), "last_name": user.get("last_name"),
         "profile_pic": user.get("profile_pic"), "birthdate": user.get("birthdate"),
         "gender": user.get("gender")
     }
@@ -68,6 +70,7 @@ async def update_admin_profile(profile_data: UserUpdate, user_id: str = Depends(
     return UserUpdateResponse(
         id=str(updated_user["_id"]), email=updated_user["email"],
         username=updated_user.get("username"), role=updated_user.get("role"),
+        first_name=updated_user.get("first_name"), last_name=updated_user.get("last_name"),
         profile_pic=updated_user.get("profile_pic"), birthdate=updated_user.get("birthdate"),
         gender=updated_user.get("gender"), message="Profile updated successfully"
     )
@@ -85,6 +88,7 @@ async def upload_admin_profile_pic(file: UploadFile = File(...), user_id: str = 
     return UserUpdateResponse(
         id=str(updated_user["_id"]), email=updated_user["email"],
         username=updated_user.get("username"), role=updated_user.get("role"),
+        first_name=updated_user.get("first_name"), last_name=updated_user.get("last_name"),
         profile_pic=updated_user.get("profile_pic"), birthdate=updated_user.get("birthdate"),
         gender=updated_user.get("gender"), message="Profile picture updated successfully"
     )
