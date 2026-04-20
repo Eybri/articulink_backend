@@ -363,3 +363,133 @@ async def get_system_health():
         "timestamp": datetime.utcnow().isoformat(),
         "services": health_results
     }
+
+@router.get("/dashboard/chat-activity", dependencies=[Depends(require_admin_auth)])
+async def get_chat_activity(timeframe: str = Query("daily")):
+    date_format = {"daily": "%Y-%m-%d", "weekly": "%Y-%U"}.get(timeframe, "%Y-%m")
+    pipeline = [
+        {"$match": {"timestamp": {"$exists": True, "$type": "string"}}},
+        {"$project": {
+            "date": {"$dateFromString": {"dateString": "$timestamp", "onError": datetime.utcnow()}}
+        }},
+        {"$group": {
+            "_id": {"$dateToString": {"format": date_format, "date": "$date"}},
+            "count": {"$sum": 1},
+            "raw_date": {"$first": "$date"}
+        }},
+        {"$project": {"period": "$_id", "count": 1, "raw_date": 1, "_id": 0}},
+        {"$sort": {"raw_date": 1}}
+    ]
+    activity_data = await db.chat_history.aggregate(pipeline).to_list(length=1000)
+    return {"timeframe": timeframe, "activity": activity_data}
+
+
+@router.get("/dashboard/platform-engagement", dependencies=[Depends(require_admin_auth)])
+async def get_platform_engagement(timeframe: str = Query("daily")):
+    date_format = {"daily": "%Y-%m-%d", "weekly": "%Y-%U"}.get(timeframe, "%Y-%m")
+    
+    # Aggregate chats
+    chat_pipeline = [
+        {"$match": {"timestamp": {"$exists": True, "$type": "string"}}},
+        {"$project": {"date": {"$dateFromString": {"dateString": "$timestamp", "onError": datetime.utcnow()}}}},
+        {"$group": {"_id": {"$dateToString": {"format": date_format, "date": "$date"}}, "chat_count": {"$sum": 1}}}
+    ]
+    chat_results = await db.chat_history.aggregate(chat_pipeline).to_list(length=1000)
+    
+    # Aggregate audio
+    audio_pipeline = [
+        {"$match": {"created_at": {"$exists": True}}},
+        {"$project": {
+            "date": {
+                "$cond": {
+                    "if": {"$eq": [{"$type": "$created_at"}, "string"]},
+                    "then": {"$dateFromString": {"dateString": "$created_at", "onError": datetime.utcnow()}},
+                    "else": "$created_at"
+                }
+            }
+        }},
+        {"$group": {"_id": {"$dateToString": {"format": date_format, "date": "$date"}}, "audio_count": {"$sum": 1}}}
+    ]
+    audio_results = await db.audio_clips.aggregate(audio_pipeline).to_list(length=1000)
+    
+    # Merge results
+    engagement_map = {}
+    for r in chat_results:
+        engagement_map[r["_id"]] = {"period": r["_id"], "chat_count": r["chat_count"], "audio_count": 0}
+    for r in audio_results:
+        if r["_id"] in engagement_map:
+            engagement_map[r["_id"]]["audio_count"] = r["audio_count"]
+        else:
+            engagement_map[r["_id"]] = {"period": r["_id"], "chat_count": 0, "audio_count": r["audio_count"]}
+            
+    sorted_engagement = sorted(engagement_map.values(), key=lambda x: x["period"])
+    return {"timeframe": timeframe, "engagement": sorted_engagement}
+
+
+@router.get("/dashboard/chat-roles", dependencies=[Depends(require_admin_auth)])
+async def get_chat_roles():
+    pipeline = [
+        {"$group": {"_id": "$role", "count": {"$sum": 1}}},
+        {"$project": {"role": "$_id", "count": 1, "_id": 0}}
+    ]
+    data = await db.chat_history.aggregate(pipeline).to_list(length=10)
+    return {"roles": data}
+
+
+@router.get("/dashboard/audio-growth", dependencies=[Depends(require_admin_auth)])
+async def get_audio_growth(timeframe: str = Query("daily")):
+    date_format = {"daily": "%Y-%m-%d", "weekly": "%Y-%U"}.get(timeframe, "%Y-%m")
+    pipeline = [
+        {"$match": {"created_at": {"$exists": True}}},
+        {"$project": {
+            "date": {
+                "$cond": {
+                    "if": {"$eq": [{"$type": "$created_at"}, "string"]},
+                    "then": {"$dateFromString": {"dateString": "$created_at", "onError": datetime.utcnow()}},
+                    "else": "$created_at"
+                }
+            }
+        }},
+        {"$group": {
+            "_id": {"$dateToString": {"format": date_format, "date": "$date"}},
+            "count": {"$sum": 1},
+            "raw_date": {"$first": "$date"}
+        }},
+        {"$project": {"period": "$_id", "count": 1, "raw_date": 1, "_id": 0}},
+        {"$sort": {"raw_date": 1}}
+    ]
+    growth_data = await db.audio_clips.aggregate(pipeline).to_list(length=1000)
+    return {"timeframe": timeframe, "growth": growth_data}
+
+
+@router.get("/dashboard/user-status", dependencies=[Depends(require_admin_auth)])
+async def get_user_status_dist():
+    pipeline = [
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+        {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+    ]
+    data = await db.users.aggregate(pipeline).to_list(length=10)
+    return {"status_distribution": data}
+
+
+@router.get("/dashboard/user-roles", dependencies=[Depends(require_admin_auth)])
+async def get_user_role_dist():
+    pipeline = [
+        {"$group": {"_id": "$role", "count": {"$sum": 1}}},
+        {"$project": {"role": "$_id", "count": 1, "_id": 0}}
+    ]
+    data = await db.users.aggregate(pipeline).to_list(length=10)
+    return {"role_distribution": data}
+
+
+@router.get("/dashboard/privacy-acceptance", dependencies=[Depends(require_admin_auth)])
+async def get_privacy_acceptance():
+    # Example logic: count users who finished onboarding vs those who didn't
+    # or if you have a specific privacy_accepted field
+    total = await db.users.count_documents({})
+    accepted = await db.users.count_documents({"privacy_accepted": True})
+    return {
+        "total": total,
+        "accepted": accepted,
+        "pending": total - accepted
+    }
