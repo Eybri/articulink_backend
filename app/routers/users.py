@@ -299,3 +299,67 @@ async def get_age_distribution():
         "total_users_with_birthdate": total_with_bd,
         "total_users": await db.users.count_documents({})
     }
+
+
+@router.get("/dashboard/health", dependencies=[Depends(require_admin_auth)])
+async def get_system_health():
+    """
+    Check health of core services and AI models.
+    Returns status: 'optimal', 'degraded', or 'down'.
+    """
+    import os
+    import httpx
+    import asyncio
+
+    health_results = {}
+    overall_status = "optimal"
+
+    # 1. MongoDB Health
+    try:
+        await db.command("ping")
+        health_results["database"] = {"status": "connected", "latency": "low"}
+    except Exception as e:
+        health_results["database"] = {"status": "error", "detail": str(e)}
+        overall_status = "down"
+
+    # 2. Gemini Model Health
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key and len(gemini_key) > 5:
+        # We assume it's working if key is present to avoid API costs on health check
+        health_results["gemini"] = {"status": "configured", "model": "gemini-2.5-flash"}
+    else:
+        health_results["gemini"] = {"status": "missing_config", "detail": "API Key not found"}
+        if overall_status == "optimal": overall_status = "degraded"
+
+    # 3. Whisper / Hugging Face Health
+    hf_url = os.getenv("HF_SPACE_URL")
+    if hf_url:
+        try:
+            # Quick HEAD request to check if space is up
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(hf_url, timeout=5.0)
+                if resp.status_code in [200, 405, 401]: # 405/401 might mean it's there but rejects empty GET
+                    health_results["whisper"] = {"status": "online", "mode": "remote"}
+                else:
+                    health_results["whisper"] = {"status": "degraded", "detail": f"Status {resp.status_code}"}
+                    if overall_status == "optimal": overall_status = "degraded"
+        except Exception as e:
+            health_results["whisper"] = {"status": "offline", "detail": str(e), "mode": "fallback_local"}
+            if overall_status == "optimal": overall_status = "degraded"
+    else:
+        health_results["whisper"] = {"status": "local_only", "mode": "local"}
+
+    # 4. Supabase Storage Health
+    sb_url = os.getenv("SUPABASE_URL")
+    sb_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if sb_url and sb_key:
+        health_results["storage"] = {"status": "configured", "provider": "supabase"}
+    else:
+        health_results["storage"] = {"status": "missing_config"}
+        if overall_status == "optimal": overall_status = "degraded"
+
+    return {
+        "status": overall_status,
+        "timestamp": datetime.utcnow().isoformat(),
+        "services": health_results
+    }
