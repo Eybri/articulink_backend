@@ -39,12 +39,12 @@ cloudinary.config(
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",") + [
-    "http://localhost:5173",   # Vite dev server (web admin)
-    "http://localhost:19006",  # Expo web
-    "http://localhost:8081",   # Expo Metro
-]
-allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
+# Prioritize ALLOWED_ORIGINS from env, fallback to "*" for dev if missing
+raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+if raw_origins:
+    allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+else:
+    allowed_origins = ["*"] 
 
 app.add_middleware(
     CORSMiddleware,
