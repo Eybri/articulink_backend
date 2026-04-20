@@ -37,4 +37,4 @@ Thumbs.db
 
 # Model cache (Whisper downloads here)
 ~/.cache/huggingface/
-# models/
+models/
