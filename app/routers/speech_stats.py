@@ -47,8 +47,12 @@ async def get_speech_stats(user_id: str = Depends(get_current_user_id)):
                     "_id": None,
                     "total_recordings": {"$sum": 1},
                     "total_duration": {"$sum": "$duration_seconds"},
+                    "avg_confidence": {"$avg": "$overall_confidence"},
                     "today_count": {
                         "$sum": {"$cond": [{"$gte": ["$created_at", today_start]}, 1, 0]}
+                    },
+                    "today_avg_confidence": {
+                        "$avg": {"$cond": [{"$gte": ["$created_at", today_start]}, "$overall_confidence", "$$REMOVE"]}
                     }
                 }}
             ],
@@ -129,11 +133,13 @@ async def get_speech_stats(user_id: str = Depends(get_current_user_id)):
 
     return {
         "total_recordings": total_recordings,
-        "total_words": total_recordings * 12, # Rough estimate if word count isn't stored, or we can improve DB schema later
+        "total_words": total_recordings * 12, 
         "total_duration_seconds": round(totals.get("total_duration", 0), 1),
+        "avg_confidence": round(totals.get("avg_confidence") or 85, 1),
         "most_used_words": [{"word": w, "count": c} for w, c in word_counter.most_common(8)],
         "recent_phrases": recent_phrases,
         "language_breakdown": {l["_id"] or "unknown": l["count"] for l in data.get("languages", [])},
         "streak_days": streak,
         "today_recordings": totals.get("today_count", 0),
+        "today_avg_confidence": round(totals.get("today_avg_confidence") or 85, 1),
     }
