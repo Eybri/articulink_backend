@@ -18,7 +18,9 @@ motor==3.7.1
 
 # AI / ASR
 faster-whisper==1.2.1
+langdetect==1.0.9
 av==17.0.0
+
 soundfile==0.13.1
 numpy>=1.26.0
 torch>=2.1.0
