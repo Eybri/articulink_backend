@@ -10,6 +10,8 @@ import httpx
 from app.utils.auth_middleware import require_auth, get_current_user_id
 from app.utils.supabase_storage import upload_audio
 from app.models.transcription import create_audio_clip, get_clips_by_user, delete_audio_clip
+from app.utils.language import detect_language
+
 
 router = APIRouter(prefix="", tags=["Transcription"])
 
@@ -92,7 +94,8 @@ async def transcribe_audio(file: UploadFile = File(...), user_id: str = Depends(
             "corrected_transcript": text, "speech_type": "unknown",
             "duration_seconds": duration, "processing_status": "completed",
             "device_type": "mobile",
-            "language": "fil" if any(kw in text.lower() for kw in ["tagalog", "filipino", "po", "opo"]) else "en",
+            "language": detect_language(text),
+
         }
         return await create_audio_clip(clip_data)
 
@@ -155,10 +158,12 @@ async def decode_whisper(audio_binary, audio_numpy):
 
     print("--- Using local Whisper fallback ---")
     local_model = get_local_whisper_model()
-    segments, _ = await asyncio.to_thread(
+    segments, info = await asyncio.to_thread(
         local_model.transcribe, audio_numpy, beam_size=1, language="tl", task="transcribe"
     )
     return " ".join([s.text for s in segments]).strip()
+
+
 
 
 @router.get("/history", dependencies=[Depends(require_auth)])

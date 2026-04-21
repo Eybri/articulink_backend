@@ -1,7 +1,8 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 import os
@@ -94,3 +95,13 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "ArticuLink Unified API"}
+
+
+# ── Global Exception Handler ──────────────────────────────────────────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"❌ Global Error: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "message": str(exc)}
+    )
