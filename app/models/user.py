@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime, timedelta
 from bson import ObjectId
 from app.db.database import db
@@ -35,11 +35,11 @@ class UserOut(BaseModel):
     role: str
     status: str
     profile_pic: Optional[str] = None
-    birthdate: Optional[str] = None
+    birthdate: Optional[Any] = None
     gender: Optional[str] = None
     privacy_accepted: Optional[bool] = False
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: Optional[Any] = None
+    updated_at: Optional[Any] = None
 
     class Config:
         from_attributes = True
