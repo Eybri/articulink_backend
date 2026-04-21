@@ -75,10 +75,14 @@ async def transcribe_audio(file: UploadFile = File(...), user_id: str = Depends(
         with open(clean_wav_path, 'rb') as f:
             clean_content = f.read()
 
-        text_result, audio_url = await asyncio.gather(
+        whisper_result, audio_url = await asyncio.gather(
             decode_whisper(clean_content, audio),
             upload_audio(clean_content, user_id, ".wav")
         )
+
+        text = whisper_result.get("text", "").strip()
+        words = whisper_result.get("words", [])
+        overall_confidence = whisper_result.get("overall_confidence", 0.0)
 
         for p in [tmp_path, clean_wav_path]:
             if p and os.path.exists(p):
@@ -86,16 +90,20 @@ async def transcribe_audio(file: UploadFile = File(...), user_id: str = Depends(
         tmp_path = None
         clean_wav_path = None
 
-        text = text_result.strip()
         duration = float(len(audio) / sr)
 
         clip_data = {
-            "user_id": user_id, "audio_url": audio_url, "transcript": text,
-            "corrected_transcript": text, "speech_type": "unknown",
-            "duration_seconds": duration, "processing_status": "completed",
+            "user_id": user_id, 
+            "audio_url": audio_url, 
+            "transcript": text,
+            "corrected_transcript": text, 
+            "speech_type": "unknown",
+            "duration_seconds": duration, 
+            "processing_status": "completed",
             "device_type": "mobile",
             "language": detect_language(text),
-
+            "overall_confidence": overall_confidence,
+            "words": words
         }
         return await create_audio_clip(clip_data)
 
@@ -142,10 +150,10 @@ async def decode_whisper(audio_binary, audio_numpy):
                     timeout=30.0
                 )
                 if response.status_code == 200:
-                    text = response.json().get("text", "").strip()
-                    if text:
+                    data = response.json()
+                    if data.get("text"):
                         print("--- Remote transcription successful ---")
-                        return text
+                        return data
                 else:
                     print(f"--- Remote transcription failed with status {response.status_code} ---")
         except Exception as e:
@@ -154,14 +162,45 @@ async def decode_whisper(audio_binary, audio_numpy):
     # Fallback to local Whisper model
     if SKIP_LOCAL_WHISPER:
         print("--- Local fallback skipped due to SKIP_LOCAL_WHISPER=true ---")
-        return "Transcription error: Remote service unavailable."
+        return {"text": "Transcription error: Remote service unavailable.", "words": [], "overall_confidence": 0}
 
     print("--- Using local Whisper fallback ---")
     local_model = get_local_whisper_model()
     segments, info = await asyncio.to_thread(
-        local_model.transcribe, audio_numpy, beam_size=1, language="tl", task="transcribe"
+        local_model.transcribe, 
+        audio_numpy, 
+        beam_size=5, 
+        language="tl", 
+        task="transcribe",
+        word_timestamps=True
     )
-    return " ".join([s.text for s in segments]).strip()
+    
+    segments_list = list(segments)
+    full_text = " ".join([s.text for s in segments_list]).strip()
+    
+    word_details = []
+    total_logprob = 0
+    
+    for segment in segments_list:
+        total_logprob += segment.avg_logprob
+        if segment.words:
+            for word in segment.words:
+                word_details.append({
+                    "word": word.word.strip(),
+                    "confidence": round(word.probability * 100, 2)
+                })
+
+    import math
+    avg_confidence = 0
+    if segments_list:
+        avg_logprob = total_logprob / len(segments_list)
+        avg_confidence = round(math.exp(avg_logprob) * 100, 2)
+
+    return {
+        "text": full_text,
+        "words": word_details,
+        "overall_confidence": avg_confidence
+    }
 
 
 
