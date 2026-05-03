@@ -27,9 +27,29 @@ async def get_clips_by_user(user_id: str, skip: int = 0, limit: int = 50) -> Lis
             clip["created_at"] = clip["created_at"].isoformat()
     return clips
 
+from app.utils.supabase_storage import delete_audio
+
 async def delete_audio_clip(clip_id: str) -> bool:
     try:
+        # Find the clip first to get the audio_url
+        clip = await db.audio_clips.find_one({"_id": ObjectId(clip_id)})
+        if not clip:
+            return False
+            
+        audio_url = clip.get("audio_url")
+        
+        # Delete from database
         result = await db.audio_clips.delete_one({"_id": ObjectId(clip_id)})
+        
+        # If database deletion succeeded, delete from Supabase storage
+        if result.deleted_count > 0 and audio_url:
+            try:
+                await delete_audio(audio_url)
+            except Exception as e:
+                # Log the error but don't fail the whole request if storage delete fails
+                print(f"Failed to delete audio from Supabase: {str(e)}")
+        
         return result.deleted_count > 0
-    except Exception:
+    except Exception as e:
+        print(f"Error in delete_audio_clip: {str(e)}")
         return False
