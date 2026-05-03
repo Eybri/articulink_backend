@@ -1,6 +1,9 @@
 # Core
 fastapi==0.121.3
-uvicorn==0.38.0
+uvicorn[standard]==0.38.0
+websockets==14.1
+watchfiles==1.1.1
+httptools==0.7.1
 gunicorn==23.0.0
 pydantic[email]==2.10.1
 python-multipart==0.0.20
