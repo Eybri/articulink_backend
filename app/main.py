@@ -24,6 +24,7 @@ from app.routers.pronunciation import router as pronunciation_router
 from app.routers.analysis import router as analysis_router
 from app.routers.speech_stats import router as speech_stats_router
 from app.routers.contact import router as contact_router
+from app.routers.streaming_transcribe import router as streaming_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ app.include_router(transcribe_router)   # /api/v1/transcribe, /api/v1/history
 app.include_router(chat_router)         # /api/v1/chatbot/*
 app.include_router(analysis_router)     # /analysis/*
 app.include_router(speech_stats_router)  # /stats/speech
+app.include_router(streaming_router)     # /api/v1/stream-transcribe
 
 # Admin web routes
 app.include_router(auth_admin_router)   # /api/admin/auth/*
