@@ -79,14 +79,17 @@ async def get_speech_stats(user_id: str = Depends(get_current_user_id)):
     result = await db.audio_clips.aggregate(pipeline).to_list(length=1)
     data = result[0] if result else {}
 
-    totals = data.get("totals", [{}])[0]
+    totals_list = data.get("totals", [])
+    totals = totals_list[0] if totals_list else {}
     total_recordings = totals.get("total_recordings", 0)
     
     if total_recordings == 0:
         return {
             "total_recordings": 0, "total_words": 0, "total_duration_seconds": 0,
+            "avg_confidence": 0,
             "most_used_words": [], "recent_phrases": [], "language_breakdown": {},
-            "streak_days": 0, "today_recordings": 0
+            "streak_days": 0, "today_recordings": 0,
+            "today_avg_confidence": 0
         }
 
     # 2. Extract Recent Phrases and Word Frequencies from sampled data
