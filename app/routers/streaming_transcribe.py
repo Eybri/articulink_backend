@@ -40,33 +40,22 @@ class StreamManager:
     def __init__(self, websocket: WebSocket, user_id: str):
         self.websocket = websocket
         self.user_id = user_id
-        self.buffer = io.BytesIO()
-        self.last_process_time = time.time()
         # Constants for audio processing
         self.SAMPLE_RATE = 16000
         self.MIN_CHUNK_SIZE = 1600 # ~50ms of audio at 16kHz
 
     async def add_audio(self, data: bytes):
-        """Append raw PCM data to buffer and process periodically."""
-        self.buffer.write(data)
-        
-        current_time = time.time()
-        if current_time - self.last_process_time >= STREAMING_CHUNK_INTERVAL:
-            await self.process_buffer()
-            self.last_process_time = current_time
+        """Process the incoming discrete audio chunk immediately."""
+        await self.process_buffer(data)
 
     async def _is_ws_connected(self):
         """Helper to check if the WebSocket is in a valid state for sending."""
         return self.websocket.client_state.name == "CONNECTED"
 
-    async def process_buffer(self):
+    async def process_buffer(self, audio_chunk: bytes):
         """Decode incoming buffer and send to HF Space."""
-        audio_chunk = self.buffer.getvalue()
         if not audio_chunk or len(audio_chunk) < self.MIN_CHUNK_SIZE:
             return
-
-        # Reset buffer for next segment
-        self.buffer = io.BytesIO()
 
         try:
             # Save chunk to temp file to decode with 'av' (handles WAV headers automatically)
@@ -80,6 +69,14 @@ class StreamManager:
             # Cleanup temp file immediately
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+            # Check RMS energy to act as Voice Activity Detection (VAD)
+            # This prevents sending background noise to Whisper which causes hallucinations
+            import numpy as np
+            rms_energy = np.sqrt(np.mean(audio_np**2))
+            if rms_energy < 0.002:  # Silence threshold
+                logger.info(f"Streaming VAD: Silence detected (RMS: {rms_energy:.4f}), skipping chunk.")
+                return
 
             # Convert numpy back to clean WAV for HF Space
             wav_io = io.BytesIO()
@@ -145,8 +142,6 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
         # Final cleanup
         try:
             if await manager._is_ws_connected():
-                if manager.buffer.tell() > 0:
-                    await manager.process_buffer()
                 await websocket.close()
         except:
             pass
