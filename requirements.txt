@@ -1,9 +1,6 @@
 # Core
 fastapi==0.121.3
 uvicorn[standard]==0.38.0
-websockets==14.1
-watchfiles==1.1.1
-httptools==0.7.1
 gunicorn==23.0.0
 pydantic[email]==2.10.1
 python-multipart==0.0.20
@@ -13,10 +10,8 @@ python-dotenv==1.2.1
 passlib==1.7.4
 bcrypt==4.0.1
 python-jose[cryptography]==3.5.0
-email-validator==2.3.0
 
 # Database
-pymongo==4.15.5
 motor==3.7.1
 
 # AI / ASR
@@ -25,7 +20,6 @@ langdetect==1.0.9
 av==17.0.0
 
 soundfile==0.13.1
-numpy>=1.26.0
 torch>=2.1.0
 google-generativeai==0.8.6
 
